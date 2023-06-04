@@ -84,7 +84,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
 				DisplayTicks = true;
 				DisplayCurrency = true;
 				DisplayPoints = false;
-                DisplayPercentOfAccount = false;
+                DisplayPercentOfAccount = true;
 
                 StopFillBrush = Brushes.Maroon;
 				TargetFillBrush = Brushes.DarkGreen;
