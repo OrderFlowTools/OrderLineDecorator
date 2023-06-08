@@ -255,7 +255,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
 
                                 // Calculate ticks and currency value from entry
                                 double priceDiff = (p.MarketPosition == MarketPosition.Long ? orderPrice - entryPrice : entryPrice - orderPrice);
-                                int ticks = (int)(priceDiff / TickSize);
+                                int ticks = (int)Instrument.MasterInstrument.RoundToTickSize(priceDiff / TickSize);
                                 double points = Instrument.MasterInstrument.RoundToTickSize(priceDiff * orderQty);
                                 double currencyValue = priceDiff * Instrument.MasterInstrument.PointValue * orderQty;
 
