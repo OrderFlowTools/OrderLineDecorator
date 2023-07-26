@@ -8,7 +8,10 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using Account = NinjaTrader.Cbi.Account;
@@ -54,20 +57,26 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
         private SimpleFont chartFont;
         private float sampleOrderLabelTextWidth;
 
+        private Chart chartWindow;
+        private bool gIsChartTraderOn;
+        private bool chartTraderVisibilitySubscribed;
         private SharpDX.DirectWrite.TextFormat textFormat;
 
         private bool IsDebug;
 
         private Object _lock;
-
+        private void Debug (String message, params object[] args) 
+        {
+            if (IsDebug) Print(String.Format("{0} : {1} : {2}", this.Name, DateTime.Now, String.Format(message, args)));
+        }
         private void Debug(String message)
         {
-            if (IsDebug) Print(message);
+            Debug(message, new object[0]);
         }
 
         protected override void OnStateChange()
         {
-            Debug("OrderLineDecorator: >>>>>>> " + State);
+            Debug(">>>>>>> " + State);
 
             if (State == State.SetDefaults)
             {
@@ -107,6 +116,8 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                 OutlineBrush = Brushes.AliceBlue;
                 TextBrush = Brushes.White;
 
+                chartTraderVisibilitySubscribed = false;
+
             }
             else if (State == State.Configure)
             {
@@ -125,9 +136,21 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                     }
                 }
 
+                gIsChartTraderOn = IsChartTraderOn();
+
+            }
+            else if (State == State.Realtime)
+            {
+                ComputeValues();
+                ForceRefresh();
             }
             else if (State == State.Terminated)
             {
+                if (chartTraderVisibilitySubscribed && chartWindow != null)
+                {
+                    chartWindow.IsVisibleChanged -= OnChartTraderVisibilityChanged;
+                }
+
                 if (isSubscribed)
                 {
                     foreach (Account a in Account.All)
@@ -138,6 +161,43 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                     }
                 }
             }
+        }
+
+        private bool IsChartTraderOn()
+        {
+            bool chartTraderOn = false;
+
+            ChartControl.Dispatcher.Invoke((Action)(() =>
+            {
+                // Main chart window
+                if (chartWindow == null)
+                {
+                    chartWindow = System.Windows.Window.GetWindow(ChartControl.Parent) as Chart;
+                }
+
+                // If we can't find the main window, we might as well go home :)
+                if (chartWindow != null)
+                {
+                    // If we haven't subscribed to the visibility event, do so.
+                    if (!chartTraderVisibilitySubscribed)
+                    {
+                        chartWindow.ChartTrader.IsVisibleChanged += OnChartTraderVisibilityChanged;
+                        chartTraderVisibilitySubscribed = true;
+                    }
+                    
+                    chartTraderOn = chartWindow.ChartTrader.IsVisible;
+                }
+
+            }));
+
+            return chartTraderOn;
+        }
+
+        private void OnChartTraderVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            gIsChartTraderOn = (bool)e.NewValue;            
+            ComputeValues();
+            ForceRefresh();
         }
 
         private float CalculateLabelSize(SimpleFont font, String label)
@@ -156,8 +216,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
         {
             // Attempting to optimize for just order states that matter
             // Dunno - maybe other states make sense as well 
-            if (State == State.Historical ||
-                (e.OrderState != OrderState.Accepted &&
+            if ((e.OrderState != OrderState.Accepted &&
                 e.OrderState != OrderState.Working &&
                 e.OrderState != OrderState.Filled &&
                 e.OrderState != OrderState.PartFilled)
@@ -172,7 +231,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
         private void OnAccountItemUpdate(object Sender, AccountItemEventArgs E)
         {
             // Attempting to optimize for just account items that matter
-            if (State == State.Historical || E.AccountItem != AccountItem.UnrealizedProfitLoss)
+            if (E.AccountItem != AccountItem.UnrealizedProfitLoss)
             {
                 return;
             }
@@ -190,8 +249,12 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
         {
             lock (_lock)
             {
+                // Reset order text and positions
+                orderQtyTracker.Clear();
+                toRender.Clear();
+
                 // We only care about realtime positions
-                if (State == State.Historical) return;
+                if (State == State.Historical || !gIsChartTraderOn) return;
 
                 // Get the account for which we're monitoring positions
                 ChartControl.Dispatcher.InvokeAsync((Action)(() =>
@@ -202,11 +265,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
 
                 // Nothing to do if we can't find the selected account
                 if (gAccount == null) return;
-
-                // Reset order text and positions
-                orderQtyTracker.Clear();
-                toRender.Clear();
-
+                
                 // Process only if we have positions
                 foreach (Position p in gAccount.Positions)
                 {
@@ -217,11 +276,15 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                         double entryPrice = p.AveragePrice;
                         double positionSize = p.Quantity;
 
+                        Debug("Found position at {0} with size {1}", entryPrice, positionSize);
+
                         // Check every order in selected account
                         foreach (Order order in gAccount.Orders)
                         {
                             // Ignore order if it's for a different instrument
                             if (order.Instrument != Instrument) continue;
+
+                            Debug("Order state : {0}", order.OrderState);
 
                             // We're only concerned with "Accepted" / "Working" orders
                             if ((order.OrderState == OrderState.Accepted || order.OrderState == OrderState.Working) &&
@@ -236,21 +299,27 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                                     continue;
                                 }
 
+                                Debug("Order type {0}", order.OrderType);
                                 string key = orderPrice + GetOrderLineDecoratorOrderType(order.OrderType).ToString();
 
                                 int orderQty = 0;
 
+                                Debug("Looking for key in orderQtyTracker {0}", key);
+
                                 // Attempt to count orders of the same type and same price 
                                 if (orderQtyTracker.ContainsKey(key))
                                 {
+                                    Debug("Found key in tracker. Updating {0} orders by {1}", orderQtyTracker[key], order.Quantity);
                                     orderQtyTracker[key] += order.Quantity;
                                     // Use aggregated order quantity
                                     orderQty = orderQtyTracker[key];
+                                    Debug("Key {0} now has {1} orders", key, orderQty);
                                 }
                                 else
                                 {
                                     orderQtyTracker.TryAdd(key, order.Quantity);
                                     orderQty = order.Quantity;
+                                    Debug("Key wasn't found in tracker. Adding new entry with {0} orders.", orderQty);
                                 }
 
                                 // Calculate ticks and currency value from entry
@@ -275,8 +344,11 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                                     (DisplayPercentOfAccount ? "  :  " : "") +
                                     (DisplayPercentOfAccount ? (currencyValue / accCashValue).ToString("P2") : "");
 
+                                Debug("Text in toRender should be: {0}", text);
+
                                 // Store order type and text against order price. This will be picked up and rendered by the OnRender call
-                                toRender.TryAdd(orderPrice, new OrderTypeAndText() { orderType = GetOrderLineDecoratorOrderType(order.OrderType), text = text });
+                                OrderTypeAndText item = new OrderTypeAndText() { orderType = GetOrderLineDecoratorOrderType(order.OrderType), text = text };
+                                toRender.AddOrUpdate(orderPrice, item, (k, v) => item);                                
                             }
                         }
                     }
@@ -327,7 +399,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
 
         protected override void OnRender(ChartControl chartControl, ChartScale chartScale)
         {
-            if (State == State.Historical || toRender.IsNullOrEmpty()) return;
+            if (State == State.Historical || !gIsChartTraderOn || toRender.IsNullOrEmpty()) return;
 
             if (ChartControl.Properties.LabelFont != chartFont)
             {
