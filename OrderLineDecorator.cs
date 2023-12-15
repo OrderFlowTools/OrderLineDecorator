@@ -1,5 +1,6 @@
 #region Using declarations
 using NinjaTrader.Cbi;
+using NinjaTrader.Data;
 using NinjaTrader.Gui;
 using NinjaTrader.Gui.Chart;
 using NinjaTrader.Gui.Tools;
@@ -8,10 +9,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using Account = NinjaTrader.Cbi.Account;
@@ -28,8 +26,8 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
         // to support additional order types
         // categorized as either STOP or TARGET
         // ---------------------------------------
-        private List<OrderType> RecognizedStopOrderTypes = new List<OrderType>() { OrderType.StopMarket, OrderType.StopLimit, OrderType.MIT };
-        private List<OrderType> RecognizedTargetOrderTypes = new List<OrderType>() { OrderType.Limit };
+        private List<OrderType> RecognizedStopOrderTypes = new List<OrderType>() { OrderType.StopMarket, OrderType.StopLimit };
+        private List<OrderType> RecognizedTargetOrderTypes = new List<OrderType>() { OrderType.Limit, OrderType.MIT };
 
         // For simplicity, we'll bunch orders as either stops or targets
         protected enum OrderLineDecoratorOrderType
@@ -126,6 +124,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                 orderQtyTracker = new ConcurrentDictionary<string, int>();
                 toRender = new ConcurrentDictionary<double, OrderTypeAndText>();
 
+                Debug("Registering order update and account item update handlers");
                 lock (Account.All)
                 {
                     foreach (Account a in Account.All)
@@ -135,12 +134,9 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                         isSubscribed = true;
                     }
                 }
-
-                gIsChartTraderOn = IsChartTraderOn();
-
             }
             else if (State == State.Realtime)
-            {
+            {                
                 ComputeValues();
                 ForceRefresh();
             }
@@ -165,6 +161,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
 
         private bool IsChartTraderOn()
         {
+            Debug("Checking if Chart Trader is enabled");
             bool chartTraderOn = false;
 
             ChartControl.Dispatcher.Invoke((Action)(() =>
@@ -239,6 +236,12 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
             ComputeValues();
         }
 
+        protected override void OnMarketDepth(MarketDepthEventArgs marketDepthUpdate)
+        {
+            base.OnMarketDepth(marketDepthUpdate);
+            if (!chartTraderVisibilitySubscribed) gIsChartTraderOn = IsChartTraderOn();
+        }
+
         protected override void OnBarUpdate()
         {
             // Compute Data Values (ex. prices, value etc)
@@ -264,8 +267,8 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                 }));
 
                 // Nothing to do if we can't find the selected account
-                if (gAccount == null) return;
-                
+                if (gAccount == null) return;                
+
                 // Process only if we have positions
                 foreach (Position p in gAccount.Positions)
                 {
@@ -365,11 +368,6 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
             return RecognizedStopOrderTypes.Contains(order.OrderType);
         }
 
-        private bool IsTargetOrder(Order order)
-        {
-            return RecognizedTargetOrderTypes.Contains(order.OrderType);
-        }
-
         private OrderLineDecoratorOrderType GetOrderLineDecoratorOrderType(OrderType orderType)
         {
             if (RecognizedStopOrderTypes.Contains(orderType))
@@ -388,10 +386,18 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
         {
             double orderPrice = 0;
 
+            Debug("Order type is " + order.OrderType);
+            Debug("Looking for order type in recognized target order types = " + RecognizedTargetOrderTypes.Contains(order.OrderType));
+
             // Only operates on recognized stop types
             if (RecognizedStopOrderTypes.Contains(order.OrderType)) orderPrice = order.StopPrice;
             // and target exits
-            else if (RecognizedTargetOrderTypes.Contains(order.OrderType)) orderPrice = order.LimitPrice;
+            else if (RecognizedTargetOrderTypes.Contains(order.OrderType))
+            {
+                // For Market-If-Touched orders, there is no limit price. The trigger price is the stop price.
+                if (order.OrderType == OrderType.MIT) orderPrice = order.StopPrice;
+                else orderPrice = order.LimitPrice;
+            }
 
             return orderPrice;
 
