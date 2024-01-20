@@ -99,6 +99,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                 DisplayCurrency = true;
                 DisplayPoints = false;
                 DisplayPercentOfAccount = true;
+                DisplayTargetAccountCash = true;
 
                 chartFont = null;
 
@@ -332,6 +333,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                                 double currencyValue = priceDiff * Instrument.MasterInstrument.PointValue * orderQty;
 
                                 double accCashValue = gAccount.GetAccountItem(AccountItem.CashValue, Currency.UsDollar).Value;
+                                double targetAccCashValue = accCashValue + currencyValue;
 
                                 DisplayTicks = DisplayTicks && (DisplayTicks || DisplayPoints || DisplayCurrency);
 
@@ -345,7 +347,9 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
                                     (DisplayCurrency ? "  :  " : "") +
                                     (DisplayCurrency ? currencyValue.ToString("C2") : "") +
                                     (DisplayPercentOfAccount ? "  :  " : "") +
-                                    (DisplayPercentOfAccount ? (currencyValue / accCashValue).ToString("P2") : "");
+                                    (DisplayPercentOfAccount ? (currencyValue / accCashValue).ToString("P2") : "") +
+                                    (DisplayTargetAccountCash ? "  :  " + targetAccCashValue.ToString("C2") : "");
+                                    
 
                                 Debug("Text in toRender should be: {0}", text);
 
@@ -468,6 +472,12 @@ namespace NinjaTrader.NinjaScript.Indicators.Gemify
         public bool DisplayPercentOfAccount
         { get; set; }
 
+        [NinjaScriptProperty]
+        [Display(Name = "Account Value Upon Target", GroupName = "Display", Order = 500)]
+        public bool DisplayTargetAccountCash
+        { get; set; }
+        
+
         // Kludge-alert! Need a better (WPF) way to determine _where_ the order line ends.
         // In the interim, this kludge will keep this functional
         [NinjaScriptProperty]
@@ -541,18 +551,18 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private Gemify.OrderLineDecorator[] cacheOrderLineDecorator;
-		public Gemify.OrderLineDecorator OrderLineDecorator(bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
+		public Gemify.OrderLineDecorator OrderLineDecorator(bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, bool displayTargetAccountCash, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
 		{
-			return OrderLineDecorator(Input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
+			return OrderLineDecorator(Input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, displayTargetAccountCash, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
 		}
 
-		public Gemify.OrderLineDecorator OrderLineDecorator(ISeries<double> input, bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
+		public Gemify.OrderLineDecorator OrderLineDecorator(ISeries<double> input, bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, bool displayTargetAccountCash, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
 		{
 			if (cacheOrderLineDecorator != null)
 				for (int idx = 0; idx < cacheOrderLineDecorator.Length; idx++)
-					if (cacheOrderLineDecorator[idx] != null && cacheOrderLineDecorator[idx].DisplayTicks == displayTicks && cacheOrderLineDecorator[idx].DisplayPoints == displayPoints && cacheOrderLineDecorator[idx].DisplayCurrency == displayCurrency && cacheOrderLineDecorator[idx].DisplayPercentOfAccount == displayPercentOfAccount && cacheOrderLineDecorator[idx].FlexGapWidth == flexGapWidth && cacheOrderLineDecorator[idx].StopFillBrush == stopFillBrush && cacheOrderLineDecorator[idx].TargetFillBrush == targetFillBrush && cacheOrderLineDecorator[idx].OutlineBrush == outlineBrush && cacheOrderLineDecorator[idx].TextBrush == textBrush && cacheOrderLineDecorator[idx].EqualsInput(input))
+					if (cacheOrderLineDecorator[idx] != null && cacheOrderLineDecorator[idx].DisplayTicks == displayTicks && cacheOrderLineDecorator[idx].DisplayPoints == displayPoints && cacheOrderLineDecorator[idx].DisplayCurrency == displayCurrency && cacheOrderLineDecorator[idx].DisplayPercentOfAccount == displayPercentOfAccount && cacheOrderLineDecorator[idx].DisplayTargetAccountCash == displayTargetAccountCash && cacheOrderLineDecorator[idx].FlexGapWidth == flexGapWidth && cacheOrderLineDecorator[idx].StopFillBrush == stopFillBrush && cacheOrderLineDecorator[idx].TargetFillBrush == targetFillBrush && cacheOrderLineDecorator[idx].OutlineBrush == outlineBrush && cacheOrderLineDecorator[idx].TextBrush == textBrush && cacheOrderLineDecorator[idx].EqualsInput(input))
 						return cacheOrderLineDecorator[idx];
-			return CacheIndicator<Gemify.OrderLineDecorator>(new Gemify.OrderLineDecorator(){ DisplayTicks = displayTicks, DisplayPoints = displayPoints, DisplayCurrency = displayCurrency, DisplayPercentOfAccount = displayPercentOfAccount, FlexGapWidth = flexGapWidth, StopFillBrush = stopFillBrush, TargetFillBrush = targetFillBrush, OutlineBrush = outlineBrush, TextBrush = textBrush }, input, ref cacheOrderLineDecorator);
+			return CacheIndicator<Gemify.OrderLineDecorator>(new Gemify.OrderLineDecorator(){ DisplayTicks = displayTicks, DisplayPoints = displayPoints, DisplayCurrency = displayCurrency, DisplayPercentOfAccount = displayPercentOfAccount, DisplayTargetAccountCash = displayTargetAccountCash, FlexGapWidth = flexGapWidth, StopFillBrush = stopFillBrush, TargetFillBrush = targetFillBrush, OutlineBrush = outlineBrush, TextBrush = textBrush }, input, ref cacheOrderLineDecorator);
 		}
 	}
 }
@@ -561,14 +571,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.Gemify.OrderLineDecorator OrderLineDecorator(bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
+		public Indicators.Gemify.OrderLineDecorator OrderLineDecorator(bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, bool displayTargetAccountCash, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
 		{
-			return indicator.OrderLineDecorator(Input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
+			return indicator.OrderLineDecorator(Input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, displayTargetAccountCash, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
 		}
 
-		public Indicators.Gemify.OrderLineDecorator OrderLineDecorator(ISeries<double> input , bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
+		public Indicators.Gemify.OrderLineDecorator OrderLineDecorator(ISeries<double> input , bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, bool displayTargetAccountCash, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
 		{
-			return indicator.OrderLineDecorator(input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
+			return indicator.OrderLineDecorator(input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, displayTargetAccountCash, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
 		}
 	}
 }
@@ -577,14 +587,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.Gemify.OrderLineDecorator OrderLineDecorator(bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
+		public Indicators.Gemify.OrderLineDecorator OrderLineDecorator(bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, bool displayTargetAccountCash, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
 		{
-			return indicator.OrderLineDecorator(Input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
+			return indicator.OrderLineDecorator(Input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, displayTargetAccountCash, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
 		}
 
-		public Indicators.Gemify.OrderLineDecorator OrderLineDecorator(ISeries<double> input , bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
+		public Indicators.Gemify.OrderLineDecorator OrderLineDecorator(ISeries<double> input , bool displayTicks, bool displayPoints, bool displayCurrency, bool displayPercentOfAccount, bool displayTargetAccountCash, int flexGapWidth, Brush stopFillBrush, Brush targetFillBrush, Brush outlineBrush, Brush textBrush)
 		{
-			return indicator.OrderLineDecorator(input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
+			return indicator.OrderLineDecorator(input, displayTicks, displayPoints, displayCurrency, displayPercentOfAccount, displayTargetAccountCash, flexGapWidth, stopFillBrush, targetFillBrush, outlineBrush, textBrush);
 		}
 	}
 }
